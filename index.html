@@ -4756,7 +4756,7 @@ async function onSignedIn() {
     if (cloudAccount && navigator.onLine && !pendingSync) {
       await cloudPollForChanges();
     }
-  }, 30000);
+  }, 5000);
 }
 
 async function cloudPollForChanges() {
