@@ -4725,27 +4725,21 @@ async function getCloudToken() {
     });
     return resp.accessToken;
   } catch {
-    try {
-      const resp = await msalApp.acquireTokenPopup({ scopes: CLOUD_CONFIG.scopes });
-      return resp.accessToken;
-    } catch (e) {
-      console.warn('Token error:', e);
-      return null;
-    }
+    // Silent failed — do redirect
+    msalApp.acquireTokenRedirect({ scopes: CLOUD_CONFIG.scopes });
+    return null;
   }
 }
 
 function cloudSignIn() {
   if (!msalApp) { toast('Cloud sync not available', 'warn'); return; }
-  msalApp.loginPopup({ scopes: CLOUD_CONFIG.scopes })
-    .then(resp => { cloudAccount = resp.account; onSignedIn(); })
-    .catch(e => { console.warn('Login failed:', e); toast('Sign in failed', 'warn'); });
+  msalApp.loginRedirect({ scopes: CLOUD_CONFIG.scopes });
 }
 
 function cloudSignOut() {
   if (!msalApp) return;
-  msalApp.logoutPopup({ account: cloudAccount })
-    .then(() => { cloudAccount = null; cloudETag = null; updateCloudStatus('offline'); });
+  cloudAccount = null; cloudETag = null;
+  msalApp.logoutRedirect({ account: cloudAccount });
 }
 
 async function onSignedIn() {
