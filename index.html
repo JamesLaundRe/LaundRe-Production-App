@@ -4847,15 +4847,77 @@ async function cloudSaveData(isFirstSave) {
   }
 }
 
-// Override the save() function to also sync to cloud
+let pendingSync = false;
+
+async function cloudSaveData(isFirstSave) {
+  const token = await getCloudToken();
+  if (!token) { pendingSync = true; return; }
+  const body = JSON.stringify({ ...db, _lastSaved: new Date().toISOString(), _savedBy: cloudAccount?.name || 'unknown' });
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+  if (!isFirstSave && cloudETag) headers['If-Match'] = cloudETag;
+
+  try {
+    const resp = await fetch(
+      `https://graph.microsoft.com/v1.0/me/drive/root:/${CLOUD_CONFIG.dataFile}:/content`,
+      { method: 'PUT', headers, body }
+    );
+    if (resp.status === 412) {
+      toast('Sync conflict — reloading latest data', 'warn');
+      await cloudLoadData();
+      return;
+    }
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const meta = await resp.json();
+    cloudETag = meta.eTag || meta.cTag || null;
+    pendingSync = false;
+    updateCloudStatus('online');
+
+    // Daily backup
+    const today = new Date().toISOString().slice(0,10);
+    const lastBackupDay = localStorage.getItem('cloud_last_backup_day');
+    if (lastBackupDay !== today) {
+      const backupName = `${CLOUD_CONFIG.backupFolder}/laundre-${today}.json`;
+      fetch(
+        `https://graph.microsoft.com/v1.0/me/drive/root:/${backupName}:/content`,
+        { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body }
+      ).then(() => localStorage.setItem('cloud_last_backup_day', today))
+       .catch(e => console.warn('Backup write failed (non-critical):', e));
+    }
+  } catch(e) {
+    console.warn('Cloud save error:', e);
+    pendingSync = true;
+    updateCloudStatus('error');
+  }
+}
+
+// Override save() to save locally first, then sync to cloud
 const _localSave = save;
 function save() {
-  localStorage.setItem(KEY, JSON.stringify(db)); // always save locally first
+  localStorage.setItem(KEY, JSON.stringify(db));
   if (cloudAccount) {
-    // Queue cloud saves so they don't overlap
     syncQueue = syncQueue.then(() => cloudSaveData(false)).catch(console.warn);
   }
 }
+
+// When connection returns, sync any pending saves
+window.addEventListener('online', () => {
+  if (cloudAccount && pendingSync) {
+    updateCloudStatus('syncing');
+    syncQueue = syncQueue.then(() => cloudSaveData(false)).catch(console.warn);
+  }
+});
+
+window.addEventListener('offline', () => {
+  if (cloudAccount) {
+    updateCloudStatus('error');
+    const txt = document.getElementById('cloud-status-text');
+    if (txt) txt.textContent = '🔴 Offline — data saved locally, will sync when reconnected';
+  }
+});
 
 // ── END CLOUD SYNC ────────────────────────────────────────────────────────
 
