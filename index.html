@@ -7,6 +7,8 @@
 <title>Chemical Log — Local</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
@@ -307,6 +309,69 @@
     }
   }
   .settings-row, .settings-row .field, .settings-row input, .settings-row select { min-width: 0; }
+
+  /* Live recipe step layout — desktop: table grid, mobile: stacked card */
+  .live-step-header {
+    display: grid;
+    grid-template-columns: 100px 60px 1fr 60px 60px 24px 28px;
+    gap: 12px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text3);
+    font-family: var(--mono);
+    align-items: center;
+  }
+  .live-step-row {
+    display: grid;
+    grid-template-columns: 100px 60px 1fr 60px 60px 24px 28px;
+    gap: 12px;
+    align-items: start;
+    padding: 10px 12px;
+    border-radius: var(--r);
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .live-step-row .col-process { font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .live-step-row .col-mono { font-family: var(--mono); }
+  .live-step-row .col-chems { display: flex; flex-direction: column; gap: 2px; }
+  .live-step-row .chem-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .live-step-row .chem-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .live-step-row .chem-amt { font-family: var(--mono); color: var(--text2); font-size: 12px; white-space: nowrap; }
+  .live-step-row .chem-pct { color: var(--text3); font-size: 11px; }
+  .live-step-row .col-meta-below { grid-column: 1 / -1; font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 4px; }
+
+  @media (max-width: 700px) {
+    .live-step-header { display: none; }
+    .live-step-row {
+      grid-template-columns: 1fr 32px;
+      gap: 8px 6px;
+      padding: 12px;
+    }
+    .live-step-row .col-process { grid-column: 1; grid-row: 1; }
+    .live-step-row .col-edit { grid-column: 2; grid-row: 1; align-self: start; }
+    .live-step-row .col-tick { grid-column: 2; grid-row: 2 / span 4; align-self: center; }
+    .live-step-row .col-water,
+    .live-step-row .col-temp,
+    .live-step-row .col-time { display: none; }
+    .live-step-row .col-chems { grid-column: 1; }
+    .live-step-row .mobile-keyfacts {
+      grid-column: 1; display: flex; flex-wrap: wrap; gap: 12px;
+      font-family: var(--mono); font-size: 13px; color: var(--text);
+    }
+    .live-step-row .col-meta-below { grid-column: 1 / -1; }
+  }
+  .mobile-keyfacts { display: none; }
+  @media (max-width: 700px) { .mobile-keyfacts { display: flex; } }
   .settings-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 
   .save-indicator {
@@ -634,6 +699,12 @@
     <button onclick="navMachines('machines-boiler',this)">🔥 Boiler</button>
     <button onclick="navMachines('machines-settings',this)">Settings</button>
   </nav>
+  <nav id="recipes-nav" style="display:none;">
+    <button onclick="navRecipes('recipes-active',this)" class="active">Active</button>
+    <button onclick="navRecipes('recipes-create',this)">+ New recipe</button>
+    <button onclick="navRecipes('recipes-library',this)">Library</button>
+    <button onclick="navRecipes('recipes-history',this)">History</button>
+  </nav>
   <div class="header-right" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
     <button id="home-btn" class="subapp-back" onclick="goHome()" style="display:none;">&#8592; Home</button>
     <span id="header-subapp-label" class="subapp-label" style="display:none;"></span>
@@ -672,11 +743,10 @@
         <div class="home-tile-label">Machines</div>
         <div class="home-tile-sub">Status &amp; fault log</div>
       </div>
-      <div class="home-tile disabled">
-        <div class="home-tile-badge">Coming soon</div>
+      <div class="home-tile" onclick="enterSubapp('recipes')">
         <div class="home-tile-icon">&#128218;</div>
         <div class="home-tile-label">Recipes</div>
-        <div class="home-tile-sub">Wash recipes &amp; ratios</div>
+        <div class="home-tile-sub">Wash recipes &amp; live tracking</div>
       </div>
       <div class="home-tile disabled">
         <div class="home-tile-badge">Coming soon</div>
@@ -1108,6 +1178,16 @@
     </div>
   </div>
 
+  <!-- RECIPES HISTORY -->
+  <div id="page-recipes-history" class="page">
+    <h2 style="margin-bottom:16px;">Completed runs</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">History of completed production runs. Each run includes the recipe used, machine, timestamps, chemicals, and QC notes.</p>
+    <div style="position:relative;max-width:300px;margin-bottom:16px;">
+      <input type="text" id="recipe-history-search" placeholder="Search by code, customer..." oninput="renderRecipeHistory()" style="width:100%;" />
+    </div>
+    <div id="recipe-history-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+  </div>
+
   <!-- MACHINES STATUS -->
   <div id="page-machines-status" class="page">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
@@ -1321,6 +1401,154 @@
       </table>
     </div>
     <div id="denim-fact-box" class="card" style="margin-top:24px;background:var(--surface2);border:1px solid var(--border);"></div>
+  </div>
+
+  <!-- RECIPES: ACTIVE -->
+  <div id="page-recipes-active" class="page">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <h2 style="margin:0;">Active recipes</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-dark" style="font-size:12px;padding:6px 14px;" onclick="openActivateRecipeModal()">+ Activate recipe</button>
+        <button class="btn btn-outline" style="font-size:12px;padding:6px 14px;" onclick="navRecipes('recipes-create')">+ New recipe</button>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">Recipes currently in production. Tap a card to view and update its progress.</p>
+    <div id="recipes-active-list" style="display:flex;flex-direction:column;gap:12px;"></div>
+  </div>
+
+  <!-- RECIPES: CREATE -->
+  <div id="page-recipes-create" class="page">
+    <h2 style="margin-bottom:4px;">New recipe</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:20px;">Fill out the form below. The recipe code is generated automatically based on today's date.</p>
+
+    <!-- Customers / project codes -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);margin-bottom:12px;">Customers &amp; project codes</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">Add each customer + project code combination. Each one becomes a separate recipe file sharing the same recipe number.</p>
+      <div id="recipe-customers-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="field" style="flex:1;min-width:120px;"><label>Customer</label><input type="text" id="rc-customer" placeholder="e.g. NIKE" /></div>
+        <div class="field" style="flex:1;min-width:120px;"><label>Project code</label><input type="text" id="rc-project" placeholder="e.g. S0001" /></div>
+        <button class="btn btn-outline" style="flex-shrink:0;" onclick="addRecipeCustomer()">+ Add</button>
+      </div>
+    </div>
+
+    <!-- Recipe code + variant -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);margin-bottom:12px;">Recipe code</div>
+      <div class="row two">
+        <div class="field">
+          <label>Recipe code <span style="font-weight:400;color:var(--text3);font-size:11px;">(editable — change date for future recipes)</span></label>
+          <div style="display:flex;gap:6px;align-items:stretch;">
+            <input type="text" id="rc-code" style="font-family:var(--mono);font-weight:600;flex:1;" onchange="validateRecipeCode()" placeholder="290526-1" />
+            <button type="button" onclick="generateRecipeCode()" title="Reset to today's auto code" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:0 12px;cursor:pointer;color:var(--text2);font-size:14px;">&#8635;</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Variant (optional)</label>
+          <select id="rc-variant">
+            <option value="">None</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+          </select>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin-top:6px;">Use a variant letter for slight variations of the same recipe (e.g. 2L vs 2.5L bleach).</p>
+    </div>
+
+    <!-- Header details -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);margin-bottom:12px;">Job details</div>
+      <div class="row two">
+        <div class="field"><label>Project name</label><input type="text" id="rc-project-name" placeholder="e.g. Bleach Wash" /></div>
+        <div class="field"><label>Dept / Contact</label><input type="text" id="rc-contact" placeholder="e.g. Joanna Senez" /></div>
+      </div>
+      <div class="row two">
+        <div class="field"><label>Fabric</label><input type="text" id="rc-fabric" placeholder="e.g. Kaihara 077" /></div>
+        <div class="field"><label>Sampling code</label><input type="text" id="rc-sampling" placeholder="optional" /></div>
+      </div>
+      <div class="row two">
+        <div class="field"><label>Units washed</label><input type="text" id="rc-units" placeholder="e.g. 2 leg panels" /></div>
+        <div class="field"><label>Wash ref used</label><input type="text" id="rc-washref" placeholder="e.g. 090326-1,2,7" /></div>
+      </div>
+      <div class="row two">
+        <div class="field"><label>Garment weight (g)</label><input type="number" id="rc-garment-weight" placeholder="optional" /></div>
+        <div class="field"><label>Total weight (kg)</label><input type="number" id="rc-total-weight" step="0.1" placeholder="e.g. 10" onchange="onRecipeWeightOrRatioChange()" /></div>
+      </div>
+      <div class="row two">
+        <div class="field">
+          <label>Liquor ratio</label>
+          <select id="rc-ratio-preset" onchange="onRatioPresetChange()">
+            <option value="">— None —</option>
+            <option value="1:6">1:6</option>
+            <option value="1:8" selected>1:8</option>
+            <option value="1:10">1:10</option>
+            <option value="1:15">1:15</option>
+            <option value="1:20">1:20</option>
+            <option value="custom">Custom...</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Custom ratio (1:?)</label>
+          <input type="number" id="rc-ratio-custom" step="0.1" placeholder="e.g. 12" oninput="onRecipeWeightOrRatioChange()" disabled />
+        </div>
+      </div>
+      <div class="row two">
+        <div class="field"><label>Process type</label><input type="text" id="rc-process-type" placeholder="optional" /></div>
+        <div class="field"><label>Garment type</label><input type="text" id="rc-garment-type" placeholder="optional" /></div>
+      </div>
+    </div>
+
+    <!-- Steps -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);">Process steps</div>
+        <button class="btn btn-outline" style="font-size:12px;padding:5px 12px;" onclick="addRecipeStep()">+ Add step</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="recipe-steps-table" style="min-width:780px;width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="font-size:10px;text-transform:uppercase;color:var(--text3);font-family:var(--mono);text-align:left;">
+              <th style="padding:6px 4px;width:30px;">#</th>
+              <th style="padding:6px 4px;">Process</th>
+              <th style="padding:6px 4px;width:70px;">Water (L)</th>
+              <th style="padding:6px 4px;width:60px;">Ratio</th>
+              <th style="padding:6px 4px;min-width:280px;">Chemicals</th>
+              <th style="padding:6px 4px;width:60px;">Temp °C</th>
+              <th style="padding:6px 4px;width:60px;">Time</th>
+              <th style="padding:6px 4px;">Notes</th>
+              <th style="padding:6px 4px;width:30px;"></th>
+            </tr>
+          </thead>
+          <tbody id="recipe-steps-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Comments -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="field"><label>Comments</label><textarea id="rc-comments" rows="2" placeholder="Any general notes for this recipe..." style="resize:vertical;"></textarea></div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:40px;">
+      <button class="btn btn-dark" onclick="saveRecipe()">Save recipe</button>
+      <button class="btn btn-excel" onclick="exportRecipePDFFromForm()">&#8659; Export PDF</button>
+      <button class="btn btn-outline" onclick="resetRecipeForm()">Clear form</button>
+    </div>
+  </div>
+
+  <!-- RECIPES: LIBRARY -->
+  <div id="page-recipes-library" class="page">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <h2 style="margin:0;">Recipe library</h2>
+      <button class="btn btn-outline" style="font-size:12px;padding:6px 12px;" onclick="document.getElementById('recipe-import-file').click()">&#8657; Import recipe JSON</button>
+      <input type="file" id="recipe-import-file" accept=".json" style="display:none;" onchange="importRecipeJSON(this)" />
+    </div>
+    <div style="position:relative;max-width:300px;margin-bottom:16px;">
+      <input type="text" id="recipe-library-search" placeholder="Search recipes..." oninput="renderRecipeLibrary()" style="width:100%;padding-right:28px;" />
+    </div>
+    <div id="recipe-library-list" style="display:flex;flex-direction:column;gap:10px;"></div>
   </div>
 
 </main>
@@ -1684,6 +1912,46 @@
       <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);margin-bottom:12px;">Danger zone</div>
       <button class="btn" style="width:100%;background:var(--danger-bg);color:var(--danger);border:1px solid #fca5a5;" onclick="closeHomeSettings(true);hardReset()">&#9888; Factory reset — wipe all data</button>
     </div>
+  </div>
+</div>
+
+<!-- ACTIVATE RECIPE MODAL -->
+<div class="modal-backdrop" id="activate-recipe-modal" onclick="closeActivateRecipeModal(event)">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Activate recipe</div>
+      <button class="modal-close" onclick="closeActivateRecipeModal(true)">&#10005;</button>
+    </div>
+    <div class="field">
+      <label>Search recipes (by code, customer, project name)</label>
+      <input type="text" id="activate-search" oninput="renderActivateRecipeList()" placeholder="Type to filter..." />
+    </div>
+    <div id="activate-recipe-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;"></div>
+    <div style="text-align:center;margin:10px 0;font-size:11px;color:var(--text3);font-family:var(--mono);">— OR —</div>
+    <button class="btn btn-outline" style="width:100%;" onclick="document.getElementById('activate-json-import').click()">&#8657; Upload recipe JSON</button>
+    <input type="file" id="activate-json-import" accept=".json" style="display:none;" onchange="activateFromJSON(this)" />
+
+    <div id="activate-machine-section" style="display:none;border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
+      <div style="font-size:12px;font-weight:500;margin-bottom:8px;" id="activate-selected-info"></div>
+      <div class="field">
+        <label>Main machine</label>
+        <select id="activate-machine"></select>
+      </div>
+      <button class="btn btn-dark" style="width:100%;margin-top:8px;" onclick="confirmActivate()">Activate</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE RECIPE TRACKING MODAL -->
+<div class="modal-backdrop" id="live-recipe-modal" onclick="closeLiveRecipeModal(event)">
+  <div class="modal" style="max-width:780px;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="live-recipe-title">Recipe</div>
+      <button class="modal-close" onclick="closeLiveRecipeModal(true)">&#10005;</button>
+    </div>
+    <div id="live-recipe-body"></div>
   </div>
 </div>
 
@@ -2918,6 +3186,8 @@ function enterSubapp(app) {
     label.textContent = 'Chemicals';
     document.getElementById('main-nav').style.display = 'flex';
     document.getElementById('staff-nav').style.display = 'none';
+    document.getElementById('machines-nav').style.display = 'none';
+    document.getElementById('recipes-nav').style.display = 'none';
     // activate first tab
     const firstBtn = document.querySelector('#main-nav button');
     document.querySelectorAll('#main-nav button').forEach(b => b.classList.remove('active'));
@@ -2928,6 +3198,8 @@ function enterSubapp(app) {
     label.textContent = 'Staff';
     document.getElementById('main-nav').style.display = 'none';
     document.getElementById('staff-nav').style.display = 'flex';
+    document.getElementById('machines-nav').style.display = 'none';
+    document.getElementById('recipes-nav').style.display = 'none';
     document.querySelectorAll('#staff-nav button').forEach(b => b.classList.remove('active'));
     document.querySelector('#staff-nav button').classList.add('active');
     document.getElementById('page-stafflog').classList.add('active');
@@ -2937,20 +3209,34 @@ function enterSubapp(app) {
     document.getElementById('main-nav').style.display = 'none';
     document.getElementById('staff-nav').style.display = 'none';
     document.getElementById('machines-nav').style.display = 'flex';
+    document.getElementById('recipes-nav').style.display = 'none';
     document.querySelectorAll('#machines-nav button').forEach(b => b.classList.remove('active'));
     document.querySelector('#machines-nav button').classList.add('active');
     document.getElementById('page-machines-status').classList.add('active');
     if (!db.machines) db.machines = JSON.parse(JSON.stringify(DEFAULTS.machines));
     renderMachineGrid();
+  } else if (app === 'recipes') {
+    label.textContent = 'Recipes';
+    document.getElementById('main-nav').style.display = 'none';
+    document.getElementById('staff-nav').style.display = 'none';
+    document.getElementById('machines-nav').style.display = 'none';
+    document.getElementById('recipes-nav').style.display = 'flex';
+    document.querySelectorAll('#recipes-nav button').forEach(b => b.classList.remove('active'));
+    document.querySelector('#recipes-nav button').classList.add('active');
+    document.getElementById('page-recipes-active').classList.add('active');
+    if (!db.recipes) db.recipes = [];
+    renderActiveRecipes();
   }
 }
 
 function goHome() {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-home').classList.add('active');
+  if (typeof stopActiveCardTicker === 'function') stopActiveCardTicker();
   document.getElementById('main-nav').style.display = 'none';
   document.getElementById('staff-nav').style.display = 'none';
   document.getElementById('machines-nav').style.display = 'none';
+  document.getElementById('recipes-nav').style.display = 'none';
   document.getElementById('home-btn').style.display = 'none';
   document.getElementById('home-settings-btn').style.display = 'inline-flex';
   document.getElementById('header-chem-log').style.display = 'block';
@@ -3409,6 +3695,15 @@ function monthStr() { const d = new Date(); return d.getFullYear() + '-' + Strin
 function isDueToday(check, machineId) {
   if (!db.machineCheckLog) db.machineCheckLog = [];
   if (!db.boilerLog) db.boilerLog = [];
+  if (!db.recipes) db.recipes = [];
+  if (!db.recipeRuns) db.recipeRuns = [];
+  // Clean up any legacy status fields on recipe templates (recipes themselves don't have status anymore — runs do)
+  (db.recipes||[]).forEach(r => {
+    if (r.status || r.stepProgress || r.machine || r.activatedAt || r.completedAt || r.qcCheck) {
+      delete r.status; delete r.stepProgress; delete r.machine; delete r.machineId;
+      delete r.activatedAt; delete r.activatedBy; delete r.completedAt; delete r.completedBy; delete r.qcCheck;
+    }
+  });
   if (check.freq === 'daily') {
     return !db.machineCheckLog.some(l => l.checkId === check.id && l.machineId === machineId && l.date === todayStr());
   }
@@ -3516,6 +3811,13 @@ function renderMachineSettings() {
     const allStaff = (db.staff||[]).filter(n => n !== 'Other');
     const responsibleHtml = `
       <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);">Recipe-eligible</div>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;">
+            <input type="checkbox" ${m.recipeEligible !== false ? 'checked' : ''} onchange="toggleMachineRecipeEligible('${m.id}',this.checked)" style="width:16px;height:16px;" />
+            <span>Show as option when activating a recipe</span>
+          </label>
+        </div>
         <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);margin-bottom:8px;">Responsible staff</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
           ${allStaff.map(name => {
@@ -3636,6 +3938,13 @@ function toggleMachineResponsibleUI(machineId, name, el) {
   el.style.background = newActive ? 'var(--text)' : 'var(--bg)';
   el.style.color = newActive ? '#fff' : 'var(--text2)';
   toggleMachineResponsible(machineId, name, newActive);
+}
+
+function toggleMachineRecipeEligible(machineId, checked) {
+  const m = (db.machines||[]).find(x => x.id === machineId);
+  if (!m) return;
+  m.recipeEligible = checked;
+  save();
 }
 
 function toggleMachineResponsible(machineId, name, checked) {
@@ -4569,6 +4878,8 @@ function hardReset() {
   db.staffLog = [];
   db.machineLog = [];
   db.boilerLog = [];
+  db.recipes = [];
+  db.recipeRuns = [];
   save();
   document.getElementById('filter-chem').innerHTML = '<option value="">All chemicals</option>';
   document.getElementById('dash-search').value = '';
@@ -4964,6 +5275,1605 @@ window.addEventListener('offline', () => {
 });
 
 // ── END CLOUD SYNC ────────────────────────────────────────────────────────
+
+// ── RECIPE CHEMICAL VALIDATION + STOCK DEDUCTION ──────────────────────────
+function findChemByNameOrNickname(name) {
+  if (!name) return null;
+  const target = name.trim().toLowerCase();
+  if (!target) return null;
+  return (db.chemicals||[]).find(c =>
+    (c.name||'').toLowerCase() === target ||
+    (c.nickname||'').toLowerCase() === target
+  ) || null;
+}
+
+function validateChemicalName(value, inputEl) {
+  if (!value) return true;
+  const found = findChemByNameOrNickname(value);
+  if (found) {
+    inputEl.style.borderColor = '';
+    inputEl.title = '';
+    return true;
+  }
+  inputEl.style.borderColor = 'var(--danger)';
+  inputEl.title = 'Not in chemical list — please add it first or use an existing name';
+  // Show prompt with quick-add option
+  showUnknownChemicalPrompt(value, inputEl);
+  return false;
+}
+
+function showUnknownChemicalPrompt(name, inputEl) {
+  // Don't spam if already showing
+  if (document.getElementById('unknown-chem-prompt')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'unknown-chem-prompt';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:var(--r-lg);padding:20px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.15);">
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Chemical not in list</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5;"><strong>${name}</strong> isn't in your chemical stock. Add it to the chemical list first, or clear this field and pick an existing one.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="document.getElementById('unknown-chem-prompt').remove()">OK</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+const HIGH_AMOUNT_WARNING_G = 10000;
+const LOW_STOCK_WARNING_G   = 500;
+
+async function confirmHighAmount(chemName, weight) {
+  return new Promise(resolve => {
+    if (document.getElementById('confirm-high-amount')) {
+      document.getElementById('confirm-high-amount').remove();
+    }
+    const overlay = document.createElement('div');
+    overlay.id = 'confirm-high-amount';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border-radius:var(--r-lg);padding:20px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.15);">
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px;color:var(--warn);">⚠ Large amount</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5;">Use <strong>${weight}g</strong> of <strong>${chemName}</strong>?<br>That's a large amount — please confirm.</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-outline" id="cha-cancel">Cancel</button>
+          <button class="btn btn-dark" id="cha-ok">Yes, use it</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('cha-cancel').onclick = () => { overlay.remove(); resolve(false); };
+    document.getElementById('cha-ok').onclick     = () => { overlay.remove(); resolve(true); };
+  });
+}
+
+async function deductChemicalsForStep(run, stepIdx) {
+  const s = run.recipeSnapshot.steps[stepIdx];
+  if (!s || !s.chemicals || !s.chemicals.length) return;
+  const recipeCode = run.recipeSnapshot.code + (run.recipeSnapshot.variant||'');
+  const cust = (run.recipeSnapshot.customers||[])[0] || {};
+  const customerLabel = cust.customer ? `${cust.customer}${cust.project ? ' '+cust.project : ''}` : '';
+  const person = cloudAccount?.name || 'unknown';
+
+  for (const ch of s.chemicals) {
+    const name = (ch.name||'').trim();
+    const weight = parseFloat(ch.weight);
+    if (!name || !weight || weight <= 0) continue;
+    const stockChem = findChemByNameOrNickname(name);
+    if (!stockChem) {
+      toast(`${name} not in stock list — skipped`, 'warn');
+      continue;
+    }
+    // High amount warning
+    if (weight > HIGH_AMOUNT_WARNING_G) {
+      const ok = await confirmHighAmount(stockChem.name, weight);
+      if (!ok) continue;
+    }
+    // Deduct
+    stockChem.stock = Math.max(0, (stockChem.stock||0) - weight);
+    // Log a use entry
+    const estCost = (typeof estUseCost === 'function')
+      ? estUseCost(stockChem, weight)
+      : ((stockChem.pricePerUnit||0) * weight);
+    if (!db.log) db.log = [];
+    db.log.unshift({
+      id: Date.now() + Math.floor(Math.random()*1000),
+      type: 'use',
+      chemId: stockChem.id,
+      chemName: stockChem.name,
+      amount: weight,
+      unit: stockChem.unit || 'g',
+      person,
+      location: '',
+      notes: `Auto-deducted from recipe step ${stepIdx+1}: ${s.process||''}`,
+      customer: customerLabel,
+      recipe: recipeCode,
+      estCost,
+      date: new Date().toISOString(),
+      runId: run.id,
+      stepIdx,
+    });
+    // Low stock warning
+    if (stockChem.stock <= LOW_STOCK_WARNING_G && stockChem.stock > 0) {
+      toast(`⚠ ${stockChem.name} low: only ${Math.round(stockChem.stock)}${stockChem.unit||'g'} left`, 'warn');
+    } else if (stockChem.stock === 0) {
+      toast(`⚠ ${stockChem.name} out of stock`, 'warn');
+    }
+  }
+  save();
+}
+
+async function refundChemicalsForStep(run, stepIdx) {
+  // Find the auto-deduction log entries and reverse them
+  const entries = (db.log||[]).filter(e =>
+    e.runId === run.id && e.stepIdx === stepIdx && e.type === 'use'
+  );
+  if (!entries.length) return;
+  entries.forEach(e => {
+    const c = (db.chemicals||[]).find(x => x.id === e.chemId);
+    if (c) c.stock = (c.stock||0) + e.amount;
+  });
+  // Remove the log entries
+  db.log = (db.log||[]).filter(e => !(e.runId === run.id && e.stepIdx === stepIdx && e.type === 'use'));
+  save();
+  toast('Chemicals refunded to stock', 'ok');
+}
+// ── END RECIPE CHEMICAL VALIDATION ────────────────────────────────────────
+
+// ── RECIPE ACTIVATION + LIVE TRACKING ─────────────────────────────────────
+let pendingActivateRecipe = null;  // recipe selected in modal, waiting for machine confirm
+
+function openActivateRecipeModal() {
+  pendingActivateRecipe = null;
+  document.getElementById('activate-search').value = '';
+  document.getElementById('activate-machine-section').style.display = 'none';
+  renderActivateRecipeList();
+  // Populate machine dropdown
+  const sel = document.getElementById('activate-machine');
+  sel.innerHTML = '<option value="">— Select machine —</option>' +
+    (db.machines||[]).filter(m => m.recipeEligible !== false).map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+  document.getElementById('activate-recipe-modal').classList.add('open');
+}
+
+function closeActivateRecipeModal(force) {
+  if (force === true || force?.target === document.getElementById('activate-recipe-modal')) {
+    document.getElementById('activate-recipe-modal').classList.remove('open');
+  }
+}
+
+function renderActivateRecipeList() {
+  const q = (document.getElementById('activate-search')?.value || '').toLowerCase().trim();
+  const el = document.getElementById('activate-recipe-list');
+  if (!el) return;
+  // All recipes are templates, group library recipes by code+createdAt
+  const groups = {};
+  (db.recipes||[]).forEach(r => {
+    const key = (r.code||'') + (r.variant||'') + '|' + (r.createdAt||'');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+  let list = Object.values(groups).sort((a,b) => (b[0].createdAt||'').localeCompare(a[0].createdAt||''));
+  if (q) list = list.filter(g => {
+    const r = g[0];
+    return (r.code||'').toLowerCase().includes(q) ||
+           (r.projectName||'').toLowerCase().includes(q) ||
+           g.some(x => (x.customers||[]).some(c => (c.customer||'').toLowerCase().includes(q) || (c.project||'').toLowerCase().includes(q)));
+  });
+  if (!list.length) { el.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--text3);">No saved recipes.</div>'; return; }
+  el.innerHTML = list.map(group => {
+    const r = group[0];
+    const code = r.code + (r.variant||'');
+    const custs = group.map(x => (x.customers||[])[0]?.customer).filter(Boolean).join(', ');
+    return `<div onclick="selectActivateRecipe(${r.id})" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <span style="font-weight:600;font-family:var(--mono);">${code}</span>
+        <span style="font-size:11px;color:var(--text3);">${new Date(r.createdAt).toLocaleDateString('en-GB')}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px;">${custs || '—'}${r.projectName ? ' · '+r.projectName : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectActivateRecipe(id) {
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  // Find sibling group
+  const codeBase = r.code + (r.variant||'');
+  const group = (db.recipes||[]).filter(x => (x.code + (x.variant||'')) === codeBase && x.createdAt === r.createdAt);
+  pendingActivateRecipe = { firstId: r.id, group };
+  const code = r.code + (r.variant||'');
+  const custs = group.map(x => (x.customers||[])[0]?.customer).filter(Boolean).join(', ');
+  document.getElementById('activate-selected-info').textContent = `${code} — ${custs}`;
+  document.getElementById('activate-machine-section').style.display = 'block';
+}
+
+function activateFromJSON(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data._type !== 'laundre-recipe' || !Array.isArray(data.recipes)) {
+        toast('Not a valid recipe file', 'warn'); return;
+      }
+      if (!db.recipes) db.recipes = [];
+      const newIds = [];
+      data.recipes.forEach(r => {
+        delete r.status; delete r.stepProgress; delete r.machine; delete r.machineId;
+        delete r.activatedAt; delete r.activatedBy; delete r.completedAt; delete r.completedBy; delete r.qcCheck;
+        r.id = Date.now() + Math.floor(Math.random()*10000);
+        db.recipes.unshift(r);
+        newIds.push(r.id);
+      });
+      save();
+      // Auto-select for activation
+      selectActivateRecipe(newIds[0]);
+      toast(`Loaded ${data.recipes.length} recipe file${data.recipes.length!==1?'s':''}`, 'ok');
+    } catch (err) {
+      toast('Invalid file', 'warn');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function confirmActivate() {
+  if (!pendingActivateRecipe) { toast('Select a recipe first', 'warn'); return; }
+  const machineId = document.getElementById('activate-machine').value;
+  if (!machineId) { toast('Select a machine', 'warn'); return; }
+  const machine = (db.machines||[]).find(m => m.id === machineId);
+  const now = new Date().toISOString();
+  const who = cloudAccount?.name || '';
+
+  if (!db.recipeRuns) db.recipeRuns = [];
+  // Create a run per sibling recipe (one per customer)
+  pendingActivateRecipe.group.forEach(r => {
+    db.recipeRuns.unshift({
+      id: Date.now() + Math.floor(Math.random()*10000),
+      recipeId: r.id,
+      recipeSnapshot: JSON.parse(JSON.stringify(r)),  // freeze recipe at activation time
+      machineId,
+      machine: machine?.name || '',
+      activatedAt: now,
+      activatedBy: who,
+      stepProgress: {},
+      status: 'active',
+    });
+  });
+  save();
+  closeActivateRecipeModal(true);
+  renderActiveRecipes();
+  toast('Recipe activated', 'ok');
+}
+
+// ── Live tracking modal ───────────────────────────────────────────────────
+let currentLiveRunId = null;
+
+function openLiveRun(runId) {
+  currentLiveRunId = runId;
+  renderLiveRecipe();
+  document.getElementById('live-recipe-modal').classList.add('open');
+  startLiveElapsedTicker();
+}
+
+function startLiveElapsedTicker() {
+  stopLiveElapsedTicker();
+  window._liveElapsedInterval = setInterval(updateLiveElapsed, 1000);
+  updateLiveElapsed();
+}
+
+function stopLiveElapsedTicker() {
+  if (window._liveElapsedInterval) {
+    clearInterval(window._liveElapsedInterval);
+    window._liveElapsedInterval = null;
+  }
+}
+
+function updateLiveElapsed() {
+  document.querySelectorAll('.live-elapsed').forEach(el => {
+    const started = new Date(el.dataset.started).getTime();
+    const diff = Math.max(0, Date.now() - started);
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    el.textContent = String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+  });
+}
+
+// Legacy
+function openLiveRecipe(id) { openLiveRun(id); }
+
+function closeLiveRecipeModal(force) {
+  if (force === true || force?.target === document.getElementById('live-recipe-modal')) {
+    document.getElementById('live-recipe-modal').classList.remove('open');
+    currentLiveRunId = null;
+    stopLiveElapsedTicker();
+    renderActiveRecipes();
+  }
+}
+
+function getCurrentRun() {
+  return (db.recipeRuns||[]).find(x => x.id === currentLiveRunId);
+}
+
+function renderLiveRecipe() {
+  const run = getCurrentRun();
+  if (!run) return;
+  const r = run.recipeSnapshot;
+  const code = r.code + (r.variant||'');
+  const cust = (r.customers||[])[0] || {};
+  document.getElementById('live-recipe-title').textContent = `${code} — ${cust.customer || ''}${cust.project ? ' '+cust.project : ''}`;
+
+  const sp = run.stepProgress || {};
+  const totalSteps = (r.steps||[]).length;
+  const completedCount = Object.values(sp).filter(p => p.completedAt).length;
+
+  const stepsHtml = (r.steps||[]).map((s, i) => {
+    const p = sp[i] || {};
+    const isStarted   = !!p.startedAt;
+    const isCompleted = !!p.completedAt;
+    const stepMachine = p.machineId ? (db.machines||[]).find(m => m.id === p.machineId)?.name : '';
+    const editedBadge = p.edited ? '<span style="font-size:10px;color:var(--warn);font-weight:600;margin-left:6px;">EDITED</span>' : '';
+    const bg = isCompleted ? 'var(--ok-bg)' : isStarted ? '#fff3e0' : 'var(--surface)';
+    const border = isCompleted ? 'var(--ok)' : isStarted ? '#f59e0b' : 'var(--border)';
+
+    return `
+    <div class="live-step-row" style="border-color:${border};background:${bg};">
+      <div class="col-process">${s.process || '—'} <span style="display:block;font-size:10px;font-weight:500;color:var(--text3);font-family:var(--mono);letter-spacing:0.04em;text-transform:none;margin-top:2px;">STEP ${i+1}${editedBadge}</span></div>
+      <div class="col-mono col-water">${s.water ? s.water+'L' : '—'}</div>
+      <div class="col-chems">
+        ${(s.chemicals||[]).length ? s.chemicals.map(c => `<div class="chem-row"><span class="chem-name">${c.name||'?'}</span><span class="chem-amt">${c.weight ? c.weight+'g' : ''}${c.percent ? ' <span class="chem-pct">('+c.percent+'%)</span>' : ''}</span></div>`).join('') : (s.chemical ? `<div>${s.chemical}${s.qty ? ' '+s.qty : ''}</div>` : '<span style="color:var(--text3);">—</span>')}
+      </div>
+      <div class="col-mono col-temp">${s.temp ? s.temp+'°C' : '—'}</div>
+      <div class="col-mono col-time">${s.time ? s.time+' min' : '—'}</div>
+      <div class="mobile-keyfacts">
+        ${s.water ? `<span>${s.water}L</span>` : ''}
+        ${s.temp ? `<span>${s.temp}°C</span>` : ''}
+        ${s.time ? `<span>${s.time} min</span>` : ''}
+      </div>
+      <button onclick="toggleEditStep(${i})" class="col-edit" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;justify-self:end;align-self:start;padding:0;" title="Edit step">&#9998;</button>
+      <button onclick="toggleStep(${i})" class="col-tick" style="width:28px;height:28px;border-radius:50%;border:2px solid ${border};background:${isCompleted?'var(--ok)':isStarted?'#f59e0b':'transparent'};color:#fff;font-weight:700;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;justify-self:end;">
+        ${isCompleted ? '&#10003;' : isStarted ? i+1 : ''}
+      </button>
+
+      <div id="step-view-extra-${i}" class="col-meta-below">
+        ${s.ratio ? `<div>ratio ${s.ratio}</div>` : ''}
+        ${s.notes ? `<div style="color:var(--text2);font-style:italic;margin-top:2px;">${s.notes}</div>` : ''}
+        ${isStarted ? `<div style="margin-top:2px;">
+          Started ${new Date(p.startedAt).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})} by ${p.startedBy || '—'}
+          ${isCompleted ? ` · Completed ${new Date(p.completedAt).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}` : ''}
+          ${p.auto ? ' <span style="color:var(--warn);font-weight:600;">· AUTO</span>' : ''}
+        </div>` : ''}
+        ${isStarted && !isCompleted ? `<div style="margin-top:2px;color:#854d0e;font-weight:600;">Active: <span class="live-elapsed" data-started="${p.startedAt}">00:00</span>${s.time ? ` <span style="color:var(--text3);font-weight:400;">/ ${s.time} min planned</span>` : ''}</div>` : ''}
+        ${stepMachine ? `<div style="margin-top:2px;">⚙ ${stepMachine}</div>` : ''}
+      </div>
+
+      <div id="step-edit-${i}" class="col-meta-below" style="display:none;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin-bottom:6px;margin-top:8px;">
+          <input type="text" id="es-process-${i}" value="${s.process||''}" placeholder="Process" style="font-size:12px;" />
+          <input type="text" id="es-water-${i}" value="${s.water||''}" placeholder="Water (L)" style="font-size:12px;" />
+          <input type="text" id="es-ratio-${i}" value="${s.ratio||''}" placeholder="Ratio" style="font-size:12px;" />
+          <input type="text" id="es-temp-${i}" value="${s.temp||''}" placeholder="Temp" style="font-size:12px;" />
+          <input type="text" id="es-time-${i}" value="${s.time||''}" placeholder="Time" style="font-size:12px;" />
+        </div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Chemicals</div>
+        <div id="es-chems-${i}" style="margin-bottom:6px;">
+          ${(s.chemicals||[]).map((c, ci) => `
+            <div style="display:grid;grid-template-columns:1.4fr 70px 70px 24px;gap:4px;margin-bottom:3px;align-items:center;">
+              <input type="text" list="recipe-chems-list" value="${c.name||''}" onchange="updateLiveChem(${i},${ci},'name',this.value);validateChemicalName(this.value,this)" placeholder="Chemical..." style="font-size:12px;padding:4px;" />
+              <input type="number" value="${c.weight||''}" onchange="updateLiveChem(${i},${ci},'weight',this.value)" placeholder="g" style="font-size:12px;padding:4px;" step="any" />
+              <input type="number" value="${c.percent||''}" onchange="updateLiveChem(${i},${ci},'percent',this.value)" placeholder="%" style="font-size:12px;padding:4px;" step="any" />
+              <button onclick="removeLiveChem(${i},${ci})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:0;">&times;</button>
+            </div>`).join('')}
+        </div>
+        <button onclick="addLiveChem(${i})" style="background:none;border:1px dashed var(--border2);border-radius:var(--r);cursor:pointer;color:var(--text2);font-size:11px;padding:3px 8px;margin-bottom:8px;">+ Add chemical</button>
+        <input type="text" id="es-notes-${i}" value="${s.notes||''}" placeholder="Notes" style="font-size:12px;width:100%;margin-bottom:6px;" />
+        <select id="es-machine-${i}" style="font-size:12px;width:100%;margin-bottom:6px;">
+          <option value="">— Use main machine —</option>
+          ${(db.machines||[]).filter(m => m.recipeEligible !== false).map(m => `<option value="${m.id}" ${p.machineId===m.id?'selected':''}>${m.name}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-dark" style="font-size:11px;padding:4px 10px;" onclick="saveStepEdit(${i})">Save</button>
+          <button class="btn btn-outline" style="font-size:11px;padding:4px 10px;" onclick="toggleEditStep(${i})">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const allDone = completedCount === totalSteps && totalSteps > 0;
+
+  document.getElementById('live-recipe-body').innerHTML = `
+    <datalist id="recipe-chems-list">${(db.chemicals||[]).map(c => `<option value="${c.name}">`).join('')}</datalist>
+    <div style="background:var(--surface2);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text2);">
+        <span>${r.projectName || ''}${r.fabric ? ' · '+r.fabric : ''}</span>
+        <span style="font-family:var(--mono);">${completedCount}/${totalSteps} steps</span>
+      </div>
+      <div style="margin-top:6px;">
+        <label style="font-size:11px;color:var(--text3);font-family:var(--mono);">Main machine</label>
+        <select onchange="updateRunMachine(this.value)" style="font-size:12px;">
+          ${(db.machines||[]).filter(m => m.recipeEligible !== false).map(m => `<option value="${m.id}" ${run.machineId===m.id?'selected':''}>${m.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      ${(run.recipeSnapshot.steps||[]).length ? `<div class="live-step-header">
+        <span>Process</span>
+        <span>Water</span>
+        <span>Chemicals</span>
+        <span>Temp</span>
+        <span>Time</span>
+        <span></span>
+        <span></span>
+      </div>` : ''}
+      ${stepsHtml || '<div class="empty">No steps in this recipe.</div>'}
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:14px;">
+      ${allDone ? `
+        <div class="field">
+          <label>QC Check</label>
+          <input type="text" id="live-qc" value="${run.qcCheck||''}" placeholder="Who did the QC check" />
+        </div>
+        <button class="btn btn-dark" style="width:100%;margin-top:8px;" onclick="markRunComplete()">Mark complete &amp; archive</button>
+      ` : `
+        <button class="btn btn-outline" style="width:100%;" onclick="pauseRecipe()">Pause &amp; close — pick up later</button>
+      `}
+      <button class="btn" style="width:100%;margin-top:8px;background:var(--danger-bg);color:var(--danger);border:1px solid #fca5a5;" onclick="cancelRun()">Cancel this run</button>
+    </div>
+  `;
+}
+
+async function toggleStep(i) {
+  const run = getCurrentRun();
+  if (!run) return;
+  if (!run.stepProgress) run.stepProgress = {};
+  const p = run.stepProgress[i] || {};
+  const now = new Date().toISOString();
+  const who = cloudAccount?.name || 'unknown';
+  if (!p.startedAt) {
+    // Starting this step
+    // 1. Auto-complete any previous in-progress step (and deduct its chemicals)
+    const justCompleted = [];
+    Object.entries(run.stepProgress).forEach(([idx, pp]) => {
+      if (pp.startedAt && !pp.completedAt) {
+        pp.completedAt = now;
+        pp.completedBy = who;
+        justCompleted.push(parseInt(idx));
+      }
+    });
+    // 2. Auto-fill any earlier untouched steps as completed
+    for (let j = 0; j < i; j++) {
+      if (!run.stepProgress[j]) {
+        run.stepProgress[j] = {
+          startedAt: now, startedBy: who,
+          completedAt: now, completedBy: who,
+          auto: true,
+        };
+        justCompleted.push(j);
+      }
+    }
+    run.stepProgress[i] = { startedAt: now, startedBy: who };
+    save();
+    renderLiveRecipe();
+    startLiveElapsedTicker();
+    // Deduct chemicals for any steps that just completed
+    for (const j of justCompleted) {
+      await deductChemicalsForStep(run, j);
+    }
+    renderLiveRecipe();
+  } else if (!p.completedAt) {
+    // Completing this step
+    p.completedAt = now;
+    p.completedBy = who;
+    save();
+    renderLiveRecipe();
+    startLiveElapsedTicker();
+    await deductChemicalsForStep(run, i);
+    renderLiveRecipe();
+  } else {
+    // Already complete — confirm untick with refund option
+    showUntickPrompt(i);
+  }
+}
+
+function showUntickPrompt(stepIdx) {
+  const existing = document.getElementById('untick-prompt');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'untick-prompt';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:var(--r-lg);padding:20px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.15);">
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Untick step ${stepIdx+1}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5;">Were the chemicals actually used?</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="closeUntickPrompt()">Keep ticked</button>
+        <button class="btn btn-outline" onclick="confirmUntick(${stepIdx},true)">Yes, leave as used</button>
+        <button class="btn" style="background:var(--danger-bg);color:var(--danger);border:1px solid #fca5a5;" onclick="confirmUntick(${stepIdx},false)">No, refund stock</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeUntickPrompt() {
+  const o = document.getElementById('untick-prompt');
+  if (o) o.remove();
+}
+
+async function confirmUntick(stepIdx, leaveAsUsed) {
+  closeUntickPrompt();
+  const run = getCurrentRun();
+  if (!run) return;
+  if (!leaveAsUsed) {
+    await refundChemicalsForStep(run, stepIdx);
+  }
+  delete run.stepProgress[stepIdx];
+  save();
+  renderLiveRecipe();
+  startLiveElapsedTicker();
+}
+
+function toggleEditStep(i) {
+  const extra = document.getElementById('step-view-extra-' + i);
+  const edit = document.getElementById('step-edit-' + i);
+  if (!edit) return;
+  const showing = edit.style.display === 'block';
+  edit.style.display = showing ? 'none' : 'block';
+  if (extra) extra.style.display = showing ? 'block' : 'none';
+}
+
+function addLiveChem(stepIdx) {
+  const run = getCurrentRun();
+  if (!run) return;
+  const s = run.recipeSnapshot.steps[stepIdx];
+  if (!s.chemicals) s.chemicals = [];
+  s.chemicals.push({ name:'', weight:'', percent:'' });
+  save();
+  renderLiveRecipe();
+  // Re-open edit form
+  setTimeout(() => toggleEditStep(stepIdx), 10);
+}
+
+function removeLiveChem(stepIdx, chemIdx) {
+  const run = getCurrentRun();
+  if (!run) return;
+  run.recipeSnapshot.steps[stepIdx].chemicals.splice(chemIdx, 1);
+  save();
+  renderLiveRecipe();
+  setTimeout(() => toggleEditStep(stepIdx), 10);
+}
+
+function updateLiveChem(stepIdx, chemIdx, field, value) {
+  const run = getCurrentRun();
+  if (!run) return;
+  const s = run.recipeSnapshot.steps[stepIdx];
+  if (!s.chemicals[chemIdx]) return;
+  const ch = s.chemicals[chemIdx];
+  ch[field] = value;
+  // Auto-calc weight ↔ percent from total weight
+  const totalKg = parseFloat(run.recipeSnapshot.totalWeight);
+  if (totalKg && totalKg > 0) {
+    const totalG = totalKg * 1000;
+    if (field === 'percent' && value !== '') {
+      const pct = parseFloat(value);
+      if (!isNaN(pct)) ch.weight = Math.round(pct * totalG / 100 * 100) / 100;
+    } else if (field === 'weight' && value !== '') {
+      const w = parseFloat(value);
+      if (!isNaN(w)) ch.percent = Math.round(w / totalG * 100 * 1000) / 1000;
+    }
+  }
+  save();
+}
+
+function saveStepEdit(i) {
+  const run = getCurrentRun();
+  if (!run) return;
+  const s = run.recipeSnapshot.steps[i];
+  s.process  = document.getElementById('es-process-'+i).value.trim();
+  s.water    = document.getElementById('es-water-'+i).value.trim();
+  s.ratio    = document.getElementById('es-ratio-'+i).value.trim();
+  s.temp     = document.getElementById('es-temp-'+i).value.trim();
+  s.time     = document.getElementById('es-time-'+i).value.trim();
+  s.notes    = document.getElementById('es-notes-'+i).value.trim();
+  if (!run.stepProgress[i]) run.stepProgress[i] = {};
+  run.stepProgress[i].machineId = document.getElementById('es-machine-'+i).value;
+  run.stepProgress[i].edited = true;
+  save();
+  renderLiveRecipe();
+  // Show in-app prompt asking whether to update template too
+  showTemplateUpdatePrompt(i);
+}
+
+function showTemplateUpdatePrompt(stepIdx) {
+  const run = getCurrentRun();
+  if (!run) return;
+  const existing = document.getElementById('template-update-prompt');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'template-update-prompt';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:var(--r-lg);padding:20px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.15);">
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Step ${stepIdx+1} updated for this run.</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5;">Also update the original recipe template, so future activations use these values?</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeTemplateUpdatePrompt(false)">Just this run</button>
+        <button class="btn btn-dark" onclick="closeTemplateUpdatePrompt(true,${stepIdx})">Update template too</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeTemplateUpdatePrompt(updateTemplate, stepIdx) {
+  const overlay = document.getElementById('template-update-prompt');
+  if (overlay) overlay.remove();
+  if (updateTemplate) {
+    const run = getCurrentRun();
+    if (!run) return;
+    const tmpl = (db.recipes||[]).find(r => r.id === run.recipeId);
+    if (tmpl && tmpl.steps && tmpl.steps[stepIdx]) {
+      tmpl.steps[stepIdx] = JSON.parse(JSON.stringify(run.recipeSnapshot.steps[stepIdx]));
+      tmpl.lastEditedAt = new Date().toISOString();
+      tmpl.lastEditedBy = cloudAccount?.name || '';
+      save();
+      toast('Step updated in run and template', 'ok');
+    } else {
+      toast('Template not found', 'warn');
+    }
+  } else {
+    toast('Step updated for this run only', 'ok');
+  }
+}
+
+function updateRunMachine(machineId) {
+  const run = getCurrentRun();
+  if (!run) return;
+  const m = (db.machines||[]).find(x => x.id === machineId);
+  run.machineId = machineId;
+  run.machine = m?.name || '';
+  save();
+}
+
+function markRunComplete() {
+  const run = getCurrentRun();
+  if (!run) return;
+  const qc = document.getElementById('live-qc')?.value.trim();
+  if (!qc) { toast('Enter QC check first', 'warn'); return; }
+  const sibs = (db.recipeRuns||[]).filter(x =>
+    x.activatedAt === run.activatedAt &&
+    x.recipeSnapshot.code === run.recipeSnapshot.code &&
+    (x.recipeSnapshot.variant||'') === (run.recipeSnapshot.variant||'')
+  );
+  const now = new Date().toISOString();
+  sibs.forEach(rec => {
+    rec.status = 'completed';
+    rec.completedAt = now;
+    rec.completedBy = cloudAccount?.name || '';
+    rec.qcCheck = qc;
+  });
+  save();
+  sibs.forEach((rec, i) => setTimeout(() => exportRunReportPDF(rec.id), i*250));
+  closeLiveRecipeModal(true);
+  toast('Recipe completed — reports downloaded', 'ok');
+}
+
+// Backwards compat
+function markRecipeComplete() { markRunComplete(); }
+function updateRecipeMachine(id) { updateRunMachine(id); }
+
+function cancelRun() {
+  const run = getCurrentRun();
+  if (!run) return;
+  const code = run.recipeSnapshot.code + (run.recipeSnapshot.variant||'');
+  // Find all sibling runs from this activation
+  const sibs = (db.recipeRuns||[]).filter(x =>
+    x.activatedAt === run.activatedAt &&
+    x.recipeSnapshot.code === run.recipeSnapshot.code &&
+    (x.recipeSnapshot.variant||'') === (run.recipeSnapshot.variant||'')
+  );
+  const msg = sibs.length > 1
+    ? `Cancel this run and the ${sibs.length-1} sibling customer file(s)? All progress will be lost. The recipe template stays untouched.`
+    : `Cancel this run? All progress will be lost. The recipe template stays untouched.`;
+  if (!confirm(msg)) return;
+  const ids = sibs.map(s => s.id);
+  db.recipeRuns = (db.recipeRuns||[]).filter(x => !ids.includes(x.id));
+  save();
+  closeLiveRecipeModal(true);
+  toast('Run cancelled', 'ok');
+}
+
+function pauseRecipe() {
+  closeLiveRecipeModal(true);
+  toast('Progress saved', 'ok');
+}
+// ── END ACTIVE TRACKING ───────────────────────────────────────────────────
+
+// ── RUN REPORTS / HISTORY ─────────────────────────────────────────────────
+function exportRunReportPDF(runId) {
+  const run = (db.recipeRuns||[]).find(x => x.id === runId);
+  if (!run) { toast('Run not found', 'warn'); return; }
+  const r = run.recipeSnapshot;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 10;
+  const cust = (r.customers||[])[0] || {};
+  const code = r.code + (r.variant||'');
+
+  // Header
+  doc.setFillColor(40, 80, 130);
+  doc.rect(M, M, W - 2*M, 12, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(14); doc.setFont(undefined,'bold');
+  doc.text(`RUN REPORT — ${cust.customer || ''}${cust.project ? ', '+cust.project : ''}, ${code}`, M + 3, M + 8);
+  doc.setFontSize(10); doc.setFont(undefined,'normal');
+  doc.text('LaundRe Production', W - M - 3, M + 8, {align:'right'});
+
+  let y = M + 16;
+  doc.setTextColor(0,0,0); doc.setFontSize(9);
+
+  // Calculate totals
+  const sp = run.stepProgress || {};
+  const stepTimes = Object.values(sp).filter(p => p.startedAt && p.completedAt);
+  let totalMs = 0;
+  stepTimes.forEach(p => { totalMs += new Date(p.completedAt) - new Date(p.startedAt); });
+  const totalMinutes = Math.round(totalMs / 60000);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const remMin = totalMinutes % 60;
+  const totalTimeStr = totalHours ? `${totalHours}h ${remMin}m` : `${totalMinutes}m`;
+
+  // Aggregate chemicals used
+  const chemTotals = {};
+  (r.steps||[]).forEach((s, i) => {
+    if (!sp[i]?.completedAt) return; // only count completed steps
+    (s.chemicals||[]).forEach(c => {
+      if (!c.name) return;
+      if (!chemTotals[c.name]) chemTotals[c.name] = 0;
+      chemTotals[c.name] += parseFloat(c.weight) || 0;
+    });
+  });
+
+  // Summary box
+  const summaryRows = [
+    ['Recipe', code, 'Customer', `${cust.customer || ''}${cust.project ? ' '+cust.project : ''}`],
+    ['Activated', new Date(run.activatedAt).toLocaleString('en-GB'), 'By', run.activatedBy || ''],
+    ['Completed', run.completedAt ? new Date(run.completedAt).toLocaleString('en-GB') : '—', 'By', run.completedBy || ''],
+    ['Total time', totalTimeStr, 'Machine', run.machine || ''],
+    ['QC Check', run.qcCheck || '', 'Total weight', r.totalWeight ? r.totalWeight+'kg' : ''],
+  ];
+  doc.autoTable({
+    startY: y,
+    body: summaryRows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 1.5 },
+    columnStyles: { 0:{fontStyle:'bold', cellWidth:30, fillColor:[230,235,245]}, 2:{fontStyle:'bold', cellWidth:30, fillColor:[230,235,245]} },
+    margin: { left: M, right: M },
+  });
+  y = doc.lastAutoTable.finalY + 4;
+
+  // Chemicals used summary
+  if (Object.keys(chemTotals).length) {
+    doc.setFontSize(10); doc.setFont(undefined,'bold');
+    doc.text('Chemicals used', M, y); y += 4;
+    const chemRows = Object.entries(chemTotals).map(([n,w]) => [n, Math.round(w*100)/100+'g']);
+    doc.autoTable({
+      startY: y,
+      head: [['Chemical','Total used']],
+      body: chemRows,
+      theme: 'grid',
+      headStyles: { fillColor: [40,80,130], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8, cellPadding: 1.5 },
+      margin: { left: M, right: M },
+    });
+    y = doc.lastAutoTable.finalY + 4;
+  }
+
+  // Step-by-step log with timestamps
+  doc.setFontSize(10); doc.setFont(undefined,'bold');
+  doc.text('Step-by-step log', M, y); y += 4;
+  const stepHead = [['#','Process','Water','Chemicals','Started','Completed','Duration','By','Notes']];
+  const stepBody = [];
+  (r.steps||[]).forEach((s, i) => {
+    const p = sp[i] || {};
+    const chemStr = (s.chemicals||[]).map(c => `${c.name}${c.weight?' '+c.weight+'g':''}`).join('\n');
+    let dur = '';
+    if (p.startedAt && p.completedAt) {
+      const ms = new Date(p.completedAt) - new Date(p.startedAt);
+      const mins = Math.round(ms/60000);
+      dur = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}m` : `${mins}m`;
+    }
+    stepBody.push([
+      i+1, s.process||'', s.water?s.water+'L':'', chemStr,
+      p.startedAt ? new Date(p.startedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '',
+      p.completedAt ? new Date(p.completedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '',
+      dur, p.startedBy || '', s.notes||''
+    ]);
+  });
+  doc.autoTable({
+    startY: y,
+    head: stepHead,
+    body: stepBody,
+    theme: 'grid',
+    headStyles: { fillColor: [40,80,130], textColor: 255, fontSize: 7, halign:'center' },
+    bodyStyles: { fontSize: 7, cellPadding: 1.5 },
+    columnStyles: { 0:{halign:'center', cellWidth:6, fontStyle:'bold', fillColor:[245,247,252]} },
+    margin: { left: M, right: M },
+  });
+
+  doc.save(`RUN ${cust.customer || ''}${cust.project ? ', '+cust.project : ''}, ${code}.pdf`);
+  toast('Run report exported', 'ok');
+}
+
+function renderRecipeHistory() {
+  const el = document.getElementById('recipe-history-list');
+  if (!el) return;
+  const q = (document.getElementById('recipe-history-search')?.value || '').toLowerCase().trim();
+  let runs = (db.recipeRuns||[]).filter(r => r.status === 'completed')
+    .sort((a,b) => (b.completedAt||'').localeCompare(a.completedAt||''));
+  if (q) runs = runs.filter(run => {
+    const r = run.recipeSnapshot;
+    return (r.code||'').toLowerCase().includes(q) ||
+           (r.projectName||'').toLowerCase().includes(q) ||
+           (r.customers||[]).some(c => (c.customer||'').toLowerCase().includes(q) || (c.project||'').toLowerCase().includes(q));
+  });
+  if (!runs.length) { el.innerHTML = '<div class="empty">No completed runs yet.</div>'; return; }
+  // Group by activatedAt + code (sibling runs completed together)
+  const groups = {};
+  runs.forEach(run => {
+    const key = run.activatedAt + '|' + run.recipeSnapshot.code + (run.recipeSnapshot.variant||'');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(run);
+  });
+
+  el.innerHTML = Object.values(groups).map(group => {
+    const run = group[0];
+    const r = run.recipeSnapshot;
+    const code = r.code + (r.variant||'');
+    const custs = group.map(x => {
+      const c = (x.recipeSnapshot.customers||[])[0] || {};
+      return `${c.customer || '—'}${c.project ? ' '+c.project : ''}`;
+    }).join(', ');
+    const buttons = group.map(x => {
+      const c = (x.recipeSnapshot.customers||[])[0] || {};
+      const label = `${c.customer || ''}${c.project ? ' '+c.project : ''}`;
+      return `<button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="exportRunReportPDF(${x.id})">&#8659; ${label} report</button>`;
+    }).join('');
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-family:var(--mono);font-size:14px;">${code}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">${custs}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;">
+            Completed ${new Date(run.completedAt).toLocaleDateString('en-GB')} · ${run.machine || ''} · QC: ${run.qcCheck || '—'}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">${buttons}</div>
+    </div>`;
+  }).join('');
+}
+// ── END HISTORY ───────────────────────────────────────────────────────────
+let recipeCustomers = [];      // [{customer, project}]
+let recipeSteps = [];          // [{process, water, qty, chemical, ph, temp, time, notes}]
+
+function navRecipes(page, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#recipes-nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (page !== 'recipes-active') stopActiveCardTicker();
+  if (page === 'recipes-active')   renderActiveRecipes();
+  if (page === 'recipes-create')   { generateRecipeCode(); renderRecipeCustomers(); renderRecipeSteps(); }
+  if (page === 'recipes-library')  renderRecipeLibrary();
+  if (page === 'recipes-history')  renderRecipeHistory();
+}
+
+function validateRecipeCode() {
+  const input = document.getElementById('rc-code');
+  if (!input) return;
+  let val = input.value.trim();
+  if (!val) return;
+  let m = val.match(/^(\d{6})(?:-(\d+))?$/);
+  if (!m) { toast('Format: DDMMYY-N (e.g. 290526-1)', 'warn'); return; }
+  const datePart = m[1];
+  let n = parseInt(m[2] || '1', 10);
+  const existing = (db.recipes||[])
+    .filter(r => !editingRecipeIds.includes(r.id))
+    .map(r => r.code)
+    .filter(c => c && c.startsWith(datePart + '-'))
+    .map(c => parseInt(c.split('-')[1]) || 0);
+  while (existing.includes(n)) n++;
+  const fixed = `${datePart}-${n}`;
+  if (fixed !== val) {
+    input.value = fixed;
+    toast(`Code already used — set to ${fixed}`, 'warn');
+  }
+}
+
+function generateRecipeCode() {
+  if (!db.recipes) db.recipes = [];
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2,'0');
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const yy = String(today.getFullYear()).slice(-2);
+  const dateStr = dd + mm + yy;
+  // Find highest existing -N for today
+  const existing = db.recipes
+    .map(r => r.code)
+    .filter(c => c && c.startsWith(dateStr + '-'))
+    .map(c => parseInt(c.split('-')[1]) || 0);
+  const next = existing.length ? Math.max(...existing) + 1 : 1;
+  const codeInput = document.getElementById('rc-code');
+  if (codeInput) codeInput.value = `${dateStr}-${next}`;
+}
+
+function addRecipeCustomer() {
+  const cust = document.getElementById('rc-customer').value.trim().toUpperCase();
+  const proj = document.getElementById('rc-project').value.trim().toUpperCase();
+  if (!cust) { toast('Enter a customer', 'warn'); return; }
+  recipeCustomers.push({ customer: cust, project: proj });
+  document.getElementById('rc-customer').value = '';
+  document.getElementById('rc-project').value = '';
+  renderRecipeCustomers();
+}
+
+function removeRecipeCustomer(idx) {
+  recipeCustomers.splice(idx, 1);
+  renderRecipeCustomers();
+}
+
+function renderRecipeCustomers() {
+  const el = document.getElementById('recipe-customers-list');
+  if (!el) return;
+  if (!recipeCustomers.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);font-style:italic;">No customers added yet — add at least one below.</div>';
+    return;
+  }
+  el.innerHTML = recipeCustomers.map((c, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border-radius:var(--r);">
+      <span style="font-weight:600;font-family:var(--mono);">${c.customer}</span>
+      ${c.project ? `<span style="font-family:var(--mono);color:var(--text2);">${c.project}</span>` : ''}
+      <span style="flex:1;"></span>
+      <button onclick="removeRecipeCustomer(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;">&times;</button>
+    </div>`).join('');
+}
+
+function addRecipeStep() {
+  recipeSteps.push({
+    process:'', water:getDefaultWater()||'', ratio:getDefaultRatio()||'',
+    chemicals:[], ph:'', temp:'', time:'', notes:''
+  });
+  renderRecipeSteps();
+}
+
+function removeRecipeStep(i) {
+  recipeSteps.splice(i, 1);
+  renderRecipeSteps();
+}
+
+function updateRecipeStep(i, field, value) {
+  recipeSteps[i][field] = value;
+  // If ratio changed for this step, recalc this step's water from total weight × step ratio
+  if (field === 'ratio') {
+    const weight = parseFloat(document.getElementById('rc-total-weight')?.value);
+    const m = (value || '').match(/1:(\d+(?:\.\d+)?)/);
+    if (weight && m) {
+      recipeSteps[i].water = Math.round(weight * parseFloat(m[1]));
+      renderRecipeSteps();
+    }
+  }
+}
+
+function renderRecipeSteps() {
+  const tbody = document.getElementById('recipe-steps-body');
+  if (!tbody) return;
+  if (!recipeSteps.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:14px 8px;text-align:center;color:var(--text3);font-size:13px;font-style:italic;">No steps yet — click "Add step" to begin.</td></tr>';
+    return;
+  }
+  // Build chemical autocomplete list datalist once
+  let datalist = '<datalist id="recipe-chems-list">' +
+    (db.chemicals||[]).map(c => `<option value="${c.name}">`).join('') +
+    '</datalist>';
+
+  tbody.innerHTML = datalist + recipeSteps.map((s, i) => {
+    // Migrate old format: single chemical/qty → chemicals array
+    if (!s.chemicals && (s.chemical || s.qty)) {
+      s.chemicals = [{ name: s.chemical||'', weight:'', percent:'' }];
+      delete s.chemical; delete s.qty;
+    }
+    if (!s.chemicals) s.chemicals = [];
+
+    const chemRows = s.chemicals.map((ch, ci) => `
+      <div style="display:grid;grid-template-columns:1.4fr 60px 60px 20px;gap:4px;margin-bottom:3px;align-items:center;">
+        <input type="text" list="recipe-chems-list" value="${ch.name||''}" onchange="updateRecipeChem(${i},${ci},'name',this.value);validateChemicalName(this.value,this)" placeholder="Chemical..." style="font-size:11px;padding:3px;" />
+        <input type="number" value="${ch.weight||''}" onchange="updateRecipeChem(${i},${ci},'weight',this.value)" placeholder="g" style="font-size:11px;padding:3px;" step="any" />
+        <input type="number" value="${ch.percent||''}" onchange="updateRecipeChem(${i},${ci},'percent',this.value)" placeholder="%" style="font-size:11px;padding:3px;" step="any" />
+        <button onclick="removeRecipeChem(${i},${ci})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:12px;padding:0;">&times;</button>
+      </div>`).join('');
+
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:4px;text-align:center;font-family:var(--mono);font-weight:600;color:var(--text3);vertical-align:top;padding-top:8px;">${i+1}</td>
+      <td style="padding:2px;vertical-align:top;"><input type="text" value="${s.process||''}" onchange="updateRecipeStep(${i},'process',this.value)" placeholder="e.g. Rinse" style="font-size:12px;padding:4px;" /></td>
+      <td style="padding:2px;vertical-align:top;"><input type="number" value="${s.water||''}" onchange="updateRecipeStep(${i},'water',this.value)" placeholder="${getDefaultWater()}" style="font-size:12px;padding:4px;" /></td>
+      <td style="padding:2px;vertical-align:top;"><input type="text" value="${s.ratio||getDefaultRatio()}" onchange="updateRecipeStep(${i},'ratio',this.value)" placeholder="1:8" style="font-size:12px;padding:4px;" /></td>
+      <td style="padding:2px;vertical-align:top;">
+        ${chemRows || '<div style="font-size:11px;color:var(--text3);font-style:italic;margin-bottom:3px;">No chemicals</div>'}
+        <button onclick="addRecipeChem(${i})" style="background:none;border:1px dashed var(--border2);border-radius:var(--r);cursor:pointer;color:var(--text2);font-size:10px;padding:2px 6px;width:100%;margin-top:2px;">+ Add chemical</button>
+      </td>
+      <td style="padding:2px;vertical-align:top;"><input type="text" value="${s.temp||''}" onchange="updateRecipeStep(${i},'temp',this.value)" placeholder="40" style="font-size:12px;padding:4px;" /></td>
+      <td style="padding:2px;vertical-align:top;"><input type="text" value="${s.time||''}" onchange="updateRecipeStep(${i},'time',this.value)" placeholder="5" style="font-size:12px;padding:4px;" /></td>
+      <td style="padding:2px;vertical-align:top;"><input type="text" value="${s.notes||''}" onchange="updateRecipeStep(${i},'notes',this.value)" style="font-size:12px;padding:4px;" /></td>
+      <td style="padding:2px;text-align:center;vertical-align:top;padding-top:8px;"><button onclick="removeRecipeStep(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;">&times;</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function addRecipeChem(stepIdx) {
+  if (!recipeSteps[stepIdx].chemicals) recipeSteps[stepIdx].chemicals = [];
+  recipeSteps[stepIdx].chemicals.push({ name:'', weight:'', percent:'' });
+  renderRecipeSteps();
+}
+
+function removeRecipeChem(stepIdx, chemIdx) {
+  recipeSteps[stepIdx].chemicals.splice(chemIdx, 1);
+  renderRecipeSteps();
+}
+
+function updateRecipeChem(stepIdx, chemIdx, field, value) {
+  const ch = recipeSteps[stepIdx].chemicals[chemIdx];
+  ch[field] = value;
+  // Auto-calc weight ↔ percent using total garment weight (kg → g)
+  const totalKg = parseFloat(document.getElementById('rc-total-weight')?.value);
+  if (totalKg && totalKg > 0) {
+    const totalG = totalKg * 1000;
+    if (field === 'percent' && value !== '') {
+      const pct = parseFloat(value);
+      if (!isNaN(pct)) ch.weight = Math.round(pct * totalG / 100 * 100) / 100;
+    } else if (field === 'weight' && value !== '') {
+      const w = parseFloat(value);
+      if (!isNaN(w)) ch.percent = Math.round(w / totalG * 100 * 1000) / 1000;
+    }
+    renderRecipeSteps();
+  }
+}
+
+function getDefaultRatio() {
+  const preset = document.getElementById('rc-ratio-preset')?.value;
+  if (preset === 'custom') {
+    const c = document.getElementById('rc-ratio-custom')?.value;
+    return c ? '1:' + c : '';
+  }
+  return preset || '';
+}
+
+function getDefaultWater() {
+  const weight = parseFloat(document.getElementById('rc-total-weight')?.value);
+  const ratio = getDefaultRatio();
+  if (!weight || !ratio) return '';
+  const m = ratio.match(/1:(\d+(?:\.\d+)?)/);
+  if (!m) return '';
+  return Math.round(weight * parseFloat(m[1]));
+}
+
+function onRatioPresetChange() {
+  const preset = document.getElementById('rc-ratio-preset').value;
+  const custom = document.getElementById('rc-ratio-custom');
+  custom.disabled = preset !== 'custom';
+  if (preset !== 'custom') custom.value = '';
+  onRecipeWeightOrRatioChange();
+}
+
+function onRecipeWeightOrRatioChange() {
+  // Update all existing steps with defaults
+  const defaultWater = getDefaultWater();
+  const defaultRatio = getDefaultRatio();
+  recipeSteps.forEach(s => {
+    if (defaultWater) s.water = defaultWater;
+    if (defaultRatio) s.ratio = defaultRatio;
+  });
+  renderRecipeSteps();
+}
+
+function buildRecipeData() {
+  return {
+    id: Date.now(),
+    code: document.getElementById('rc-code').value.trim(),
+    variant: document.getElementById('rc-variant').value,
+    customers: [...recipeCustomers],
+    projectName: document.getElementById('rc-project-name').value.trim(),
+    contact:     document.getElementById('rc-contact').value.trim(),
+    fabric:      document.getElementById('rc-fabric').value.trim(),
+    sampling:    document.getElementById('rc-sampling').value.trim(),
+    units:       document.getElementById('rc-units').value.trim(),
+    washRef:     document.getElementById('rc-washref').value.trim(),
+    garmentWeight: document.getElementById('rc-garment-weight').value,
+    totalWeight:   document.getElementById('rc-total-weight').value,
+    ratioPreset:   document.getElementById('rc-ratio-preset').value,
+    ratioCustom:   document.getElementById('rc-ratio-custom').value,
+    ratio:         getDefaultRatio(),
+    processType:   document.getElementById('rc-process-type').value.trim(),
+    garmentType:   document.getElementById('rc-garment-type').value.trim(),
+    steps: [...recipeSteps],
+    comments: document.getElementById('rc-comments').value.trim(),
+    createdAt: new Date().toISOString(),
+    createdBy: cloudAccount?.name || 'unknown',
+    stepProgress: {},  // {stepIndex: timestampISO} for live tracking later
+    machine: '',
+    status: 'draft',
+  };
+}
+
+let editingRecipeIds = []; // IDs of recipes being edited (one per customer)
+
+function saveRecipe() {
+  if (!recipeCustomers.length) { toast('Add at least one customer', 'warn'); return; }
+  validateRecipeCode();
+  const code = document.getElementById('rc-code').value.trim();
+  if (!code || !/^\d{6}-\d+$/.test(code)) { toast('Invalid recipe code', 'warn'); return; }
+  if (!db.recipes) db.recipes = [];
+  const variant = document.getElementById('rc-variant').value;
+  const baseData = buildRecipeData();
+  const now = new Date().toISOString();
+  const who = cloudAccount?.name || 'unknown';
+
+  if (editingRecipeIds.length) {
+    // EDIT MODE — remove all old entries for this code group, replace with new ones
+    db.recipes = db.recipes.filter(r => !editingRecipeIds.includes(r.id));
+  }
+
+  recipeCustomers.forEach(c => {
+    const r = JSON.parse(JSON.stringify(baseData));
+    r.id = Date.now() + Math.floor(Math.random()*10000);
+    r.customers = [c];
+    r.fileName = `${c.customer}${c.project ? ' '+c.project : ''} ${code}${variant ? variant : ''}`;
+    if (editingRecipeIds.length) {
+      r.lastEditedAt = now;
+      r.lastEditedBy = who;
+    }
+    db.recipes.unshift(r);
+  });
+  save();
+  const msg = editingRecipeIds.length ? 'Recipe updated' : 'Recipe saved';
+  toast(msg + ' (' + recipeCustomers.length + ' file' + (recipeCustomers.length>1?'s':'') + ')', 'ok');
+  editingRecipeIds = [];
+  resetRecipeForm();
+  navRecipes('recipes-library', document.querySelector('#recipes-nav button:nth-child(3)'));
+}
+
+function copyRecipe(id) {
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  const codeBase = r.code + (r.variant||'');
+  const group = (db.recipes||[]).filter(x => (x.code + (x.variant||'')) === codeBase && x.createdAt === r.createdAt);
+
+  // NOT editing — clearing editingRecipeIds means save creates new entries
+  editingRecipeIds = [];
+
+  navRecipes('recipes-create', document.querySelector('#recipes-nav button:nth-child(2)'));
+  setTimeout(() => {
+    // Generate a fresh code for today
+    generateRecipeCode();
+    // Pre-fill the wash ref with the original code so it links back
+    document.getElementById('rc-washref').value = codeBase;
+    // Pre-fill everything else from the source
+    document.getElementById('rc-variant').value   = '';
+    document.getElementById('rc-project-name').value = r.projectName || '';
+    document.getElementById('rc-contact').value      = r.contact || '';
+    document.getElementById('rc-fabric').value       = r.fabric || '';
+    document.getElementById('rc-sampling').value     = r.sampling || '';
+    document.getElementById('rc-units').value        = r.units || '';
+    document.getElementById('rc-garment-weight').value = r.garmentWeight || '';
+    document.getElementById('rc-total-weight').value   = r.totalWeight || '';
+    document.getElementById('rc-ratio-preset').value   = r.ratioPreset || '1:8';
+    document.getElementById('rc-ratio-custom').value   = r.ratioCustom || '';
+    document.getElementById('rc-ratio-custom').disabled = (r.ratioPreset !== 'custom');
+    document.getElementById('rc-process-type').value   = r.processType || '';
+    document.getElementById('rc-garment-type').value   = r.garmentType || '';
+    document.getElementById('rc-comments').value       = r.comments || '';
+    recipeCustomers = group.map(x => ({ ...(x.customers||[])[0] })).filter(Boolean);
+    // Deep-copy steps so edits don't affect the original
+    recipeSteps = JSON.parse(JSON.stringify(r.steps || []));
+    renderRecipeCustomers();
+    renderRecipeSteps();
+    toast('Copied — adjust as needed and save', 'ok');
+  }, 50);
+}
+
+function editRecipe(id) {
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  // Find all recipe entries that share this base code (same group)
+  const codeBase = r.code + (r.variant||'');
+  const group = (db.recipes||[]).filter(x => (x.code + (x.variant||'')) === codeBase && x.createdAt === r.createdAt);
+  editingRecipeIds = group.map(x => x.id);
+
+  // Pre-fill form
+  navRecipes('recipes-create', document.querySelector('#recipes-nav button:nth-child(2)'));
+  setTimeout(() => {
+    document.getElementById('rc-code').value      = r.code || '';
+    document.getElementById('rc-variant').value   = r.variant || '';
+    document.getElementById('rc-project-name').value = r.projectName || '';
+    document.getElementById('rc-contact').value      = r.contact || '';
+    document.getElementById('rc-fabric').value       = r.fabric || '';
+    document.getElementById('rc-sampling').value     = r.sampling || '';
+    document.getElementById('rc-units').value        = r.units || '';
+    document.getElementById('rc-washref').value      = r.washRef || '';
+    document.getElementById('rc-garment-weight').value = r.garmentWeight || '';
+    document.getElementById('rc-total-weight').value   = r.totalWeight || '';
+    document.getElementById('rc-ratio-preset').value   = r.ratioPreset || '';
+    document.getElementById('rc-ratio-custom').value   = r.ratioCustom || '';
+    document.getElementById('rc-ratio-custom').disabled = (r.ratioPreset !== 'custom');
+    document.getElementById('rc-process-type').value   = r.processType || '';
+    document.getElementById('rc-garment-type').value   = r.garmentType || '';
+    document.getElementById('rc-comments').value       = r.comments || '';
+    // Merge customers from group
+    recipeCustomers = group.map(x => (x.customers||[])[0]).filter(Boolean);
+    recipeSteps = [...(r.steps || [])];
+    renderRecipeCustomers();
+    renderRecipeSteps();
+    toast('Editing recipe — save to update', 'ok');
+  }, 50);
+}
+
+function downloadRecipeJSON(id) {
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  const codeBase = r.code + (r.variant||'');
+  const group = (db.recipes||[]).filter(x => (x.code + (x.variant||'')) === codeBase && x.createdAt === r.createdAt);
+  // Strip any status fields so it's always a clean template
+  const cleanGroup = group.map(rec => {
+    const c = JSON.parse(JSON.stringify(rec));
+    delete c.status; delete c.stepProgress; delete c.machine; delete c.machineId;
+    delete c.activatedAt; delete c.activatedBy; delete c.completedAt; delete c.completedBy; delete c.qcCheck;
+    return c;
+  });
+  const payload = {
+    _type: 'laundre-recipe',
+    _version: 1,
+    _exportedAt: new Date().toISOString(),
+    recipes: cleanGroup,
+  };
+  const a = document.createElement('a');
+  a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
+  a.download = (r.fileName || r.code) + '.json';
+  a.click();
+  toast('Recipe data downloaded', 'ok');
+}
+
+function importRecipeJSON(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data._type !== 'laundre-recipe' || !Array.isArray(data.recipes)) {
+        toast('Not a valid recipe file', 'warn'); return;
+      }
+      if (!db.recipes) db.recipes = [];
+      let added = 0;
+      data.recipes.forEach(r => {
+        // Skip if already exists (same id)
+        if (db.recipes.find(x => x.id === r.id)) return;
+        // Strip any status fields — recipes are templates, runs are separate
+        delete r.status; delete r.stepProgress; delete r.machine; delete r.machineId;
+        delete r.activatedAt; delete r.activatedBy; delete r.completedAt; delete r.completedBy; delete r.qcCheck;
+        // Re-id to avoid clashes
+        r.id = Date.now() + Math.floor(Math.random()*10000);
+        db.recipes.unshift(r);
+        added++;
+      });
+      save();
+      renderRecipeLibrary();
+      toast(`Imported ${added} recipe file${added!==1?'s':''}`, 'ok');
+    } catch (err) {
+      toast('Invalid file', 'warn');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function exportAllRecipePDFs(id) {
+  // Export every recipe in this group as a separate PDF
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  const codeBase = r.code + (r.variant||'');
+  const group = (db.recipes||[]).filter(x => (x.code + (x.variant||'')) === codeBase && x.createdAt === r.createdAt);
+  group.forEach((rec, i) => {
+    // small delay between each so browsers don't block multi-download
+    setTimeout(() => exportRecipePDF(rec), i * 250);
+  });
+}
+
+function resetRecipeForm() {
+  recipeCustomers = [];
+  recipeSteps = [];
+  editingRecipeIds = [];
+  ['rc-customer','rc-project','rc-project-name','rc-contact','rc-fabric','rc-sampling','rc-units','rc-washref','rc-garment-weight','rc-total-weight','rc-process-type','rc-garment-type','rc-comments'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('rc-variant').value = '';
+  document.getElementById('rc-ratio-preset').value = '1:8';
+  document.getElementById('rc-ratio-custom').value = '';
+  document.getElementById('rc-ratio-custom').disabled = true;
+  generateRecipeCode();
+  renderRecipeCustomers();
+  renderRecipeSteps();
+}
+
+function renderActiveRecipes() {
+  const el = document.getElementById('recipes-active-list');
+  if (!el) return;
+  const active = (db.recipeRuns||[]).filter(r => r.status === 'active');
+  if (!active.length) {
+    el.innerHTML = '<div class="empty">No active recipes. Tap "+ Activate recipe" to start one.</div>';
+    return;
+  }
+  // Group runs by recipe code+createdAt
+  const groups = {};
+  active.forEach(run => {
+    const r = run.recipeSnapshot;
+    const key = (r.code||'') + (r.variant||'') + '|' + (r.createdAt||'') + '|' + run.activatedAt;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(run);
+  });
+
+  el.innerHTML = Object.values(groups).map(group => {
+    const run = group[0];
+    const r = run.recipeSnapshot;
+    const code = r.code + (r.variant||'');
+    const total = (r.steps||[]).length;
+    const sp = run.stepProgress || {};
+    const completed = Object.values(sp).filter(p => p.completedAt).length;
+    const inProgIdx = Object.entries(sp).find(([i,p]) => p.startedAt && !p.completedAt)?.[0];
+    const currentStep = inProgIdx != null
+      ? `Step ${parseInt(inProgIdx)+1}/${total}: ${(r.steps[inProgIdx]?.process || '—')} — in progress`
+      : completed === total && total > 0
+        ? 'All steps complete — ready for QC'
+        : completed > 0
+          ? `${completed}/${total} done — paused`
+          : 'Not started';
+    const pct = total ? Math.round(completed / total * 100) : 0;
+    const custs = group.map(run2 => {
+      const c = (run2.recipeSnapshot.customers||[])[0] || {};
+      return `${c.customer || '—'}${c.project ? ' '+c.project : ''}`;
+    }).join(', ');
+
+    return `<div class="card" style="cursor:pointer;margin-bottom:12px;padding:14px 16px;" onclick="openLiveRun(${run.id})">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-family:var(--mono);font-size:15px;">${code}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">${custs}</div>
+        </div>
+        ${run.machine ? `<div style="font-size:11px;color:var(--text3);font-family:var(--mono);">⚙ ${run.machine}</div>` : ''}
+      </div>
+      <div style="background:var(--surface2);border-radius:100px;height:6px;overflow:hidden;margin-bottom:6px;">
+        <div style="background:var(--ok);height:100%;width:${pct}%;transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:12px;color:${inProgIdx != null ? '#854d0e' : 'var(--text2)'};font-weight:${inProgIdx != null ? '600' : '400'};">${currentStep}</div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;font-family:var(--mono);color:var(--text3);">
+        ${run.activatedAt ? `<span>Recipe: <span class="card-elapsed" data-started="${run.activatedAt}">00:00</span></span>` : ''}
+        ${inProgIdx != null && sp[inProgIdx]?.startedAt ? `<span style="color:#854d0e;font-weight:600;">Step: <span class="card-elapsed" data-started="${sp[inProgIdx].startedAt}">00:00</span>${r.steps[inProgIdx]?.time ? ` / ${r.steps[inProgIdx].time}m` : ''}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  // Start the ticker for cards
+  startActiveCardTicker();
+}
+
+function startActiveCardTicker() {
+  stopActiveCardTicker();
+  window._activeCardInterval = setInterval(updateActiveCardElapsed, 1000);
+  updateActiveCardElapsed();
+}
+
+function stopActiveCardTicker() {
+  if (window._activeCardInterval) {
+    clearInterval(window._activeCardInterval);
+    window._activeCardInterval = null;
+  }
+}
+
+function updateActiveCardElapsed() {
+  document.querySelectorAll('.card-elapsed').forEach(el => {
+    const started = new Date(el.dataset.started).getTime();
+    const diff = Math.max(0, Date.now() - started);
+    const totalMins = Math.floor(diff / 60000);
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    const secs = Math.floor((diff % 60000) / 1000);
+    if (hours > 0) {
+      el.textContent = hours + 'h ' + String(mins).padStart(2,'0') + 'm';
+    } else {
+      el.textContent = String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+    }
+  });
+}
+
+function renderRecipeLibrary() {
+  const el = document.getElementById('recipe-library-list');
+  if (!el) return;
+  const q = (document.getElementById('recipe-library-search')?.value || '').toLowerCase().trim();
+  let recipes = [...(db.recipes||[])].sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+  if (q) recipes = recipes.filter(r =>
+    (r.fileName||'').toLowerCase().includes(q) ||
+    (r.code||'').toLowerCase().includes(q) ||
+    (r.projectName||'').toLowerCase().includes(q) ||
+    (r.customers||[]).some(c => (c.customer||'').toLowerCase().includes(q))
+  );
+
+  // Group recipes by code+variant+createdAt (sibling group)
+  const groups = {};
+  recipes.forEach(r => {
+    const key = (r.code||'') + (r.variant||'') + '|' + (r.createdAt||'');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+  const groupList = Object.values(groups);
+
+  if (!groupList.length) { el.innerHTML = '<div class="empty">No recipes match.</div>'; return; }
+
+  el.innerHTML = groupList.map(group => {
+    const first = group[0];
+    const editedTxt = first.lastEditedAt
+      ? ` · Edited ${new Date(first.lastEditedAt).toLocaleDateString('en-GB')}${first.lastEditedBy ? ' by '+first.lastEditedBy : ''}`
+      : '';
+    const code = first.code + (first.variant || '');
+    const customerLines = group.map(r => {
+      const c = (r.customers||[])[0] || {};
+      return `<div style="font-size:12px;font-family:var(--mono);color:var(--text);">${c.customer || '—'}${c.project ? ' <span style="color:var(--text3);">'+c.project+'</span>' : ''}</div>`;
+    }).join('');
+    return `
+    <div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-family:var(--mono);font-size:14px;margin-bottom:6px;">${code}</div>
+          ${customerLines}
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0;">
+          <button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="editRecipe(${first.id})">&#9998; Edit</button>
+          <button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="copyRecipe(${first.id})" title="Use this as base for a new recipe">&#10063; Copy</button>
+          <button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="exportAllRecipePDFs(${first.id})">&#8659; PDF</button>
+          <button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="downloadRecipeJSON(${first.id})" title="Save raw data for backup">&#8659; JSON</button>
+          <button class="btn" style="font-size:11px;padding:3px 8px;background:var(--danger-bg);color:var(--danger);border:1px solid #fca5a5;" onclick="deleteRecipeGroup(${first.id})">Delete</button>
+        </div>
+      </div>
+      ${first.projectName ? `<div style="font-size:12px;color:var(--text2);">${first.projectName}${first.fabric ? ' · '+first.fabric : ''}</div>` : ''}
+      <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;">${new Date(first.createdAt).toLocaleDateString('en-GB')} · ${(first.steps||[]).length} steps${editedTxt}</div>
+    </div>`;
+  }).join('');
+}
+
+function deleteRecipeGroup(id) {
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  const codeBase = r.code + (r.variant||'');
+  const group = (db.recipes||[]).filter(x => (x.code + (x.variant||'')) === codeBase && x.createdAt === r.createdAt);
+  if (!confirm(`Delete this recipe and all ${group.length} customer file${group.length>1?'s':''}?`)) return;
+  const ids = group.map(x => x.id);
+  db.recipes = (db.recipes||[]).filter(r => !ids.includes(r.id));
+  save();
+  renderRecipeLibrary();
+  toast('Recipe deleted', 'ok');
+}
+
+function deleteRecipe(id) {
+  if (!confirm('Delete this recipe?')) return;
+  db.recipes = (db.recipes||[]).filter(r => r.id !== id);
+  save();
+  renderRecipeLibrary();
+  toast('Recipe deleted', 'ok');
+}
+
+function exportRecipePDFById(id) {
+  const r = (db.recipes||[]).find(x => x.id === id);
+  if (!r) return;
+  exportRecipePDF(r);
+}
+
+function exportRecipePDFFromForm() {
+  if (!recipeCustomers.length) { toast('Add at least one customer first', 'warn'); return; }
+  const code = document.getElementById('rc-code').value.trim();
+  if (!code) { toast('Recipe code missing', 'warn'); return; }
+  const variant = document.getElementById('rc-variant').value;
+  const baseData = buildRecipeData();
+  // Build one preview recipe per customer and export each as a PDF
+  recipeCustomers.forEach((c, i) => {
+    const r = JSON.parse(JSON.stringify(baseData));
+    r.customers = [c];
+    r.fileName = `${c.customer}${c.project ? ' '+c.project : ''} ${code}${variant ? variant : ''}`;
+    setTimeout(() => exportRecipePDF(r), i * 250);
+  });
+}
+
+function exportRecipePDF(recipeData) {
+  const r = recipeData || buildRecipeData();
+  if (!r.code) { toast('No recipe to export', 'warn'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 10;
+
+  // Header bar
+  doc.setFillColor(40, 80, 130);
+  doc.rect(M, M, W - 2*M, 12, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(14); doc.setFont(undefined,'bold');
+  doc.text(r.fileName || r.code, M + 3, M + 8);
+  doc.setFontSize(10); doc.setFont(undefined,'normal');
+  doc.text('LaundRe Production', W - M - 3, M + 8, {align:'right'});
+
+  // Header info rows
+  let y = M + 16;
+  doc.setTextColor(0,0,0); doc.setFontSize(9);
+  const customers = (r.customers||[]).map(c => `${c.customer}${c.project ? ' '+c.project : ''}`).join(', ');
+  const headerRows = [
+    ['Customer', customers, 'Dept/Contact', r.contact || ''],
+    ['Project Name', r.projectName || '', 'Project No', (r.customers||[]).map(c=>c.project).filter(Boolean).join(', ')],
+    ['Recipe', r.code + (r.variant||''), 'Wash Ref', r.washRef || ''],
+    ['Fabric', r.fabric || '', 'Process Type', r.processType || ''],
+    ['Garment Weight (g)', r.garmentWeight || '', 'Total Weight (kg)', r.totalWeight || ''],
+    ['Liquor Ratio', r.ratio || '', 'Garment Type', r.garmentType || ''],
+    ['No Units', r.units || '', '', ''],
+  ];
+  doc.autoTable({
+    startY: y,
+    body: headerRows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 1.5 },
+    columnStyles: { 0:{fontStyle:'bold', cellWidth:36, fillColor:[230,235,245]}, 2:{fontStyle:'bold', cellWidth:36, fillColor:[230,235,245]} },
+    margin: { left: M, right: M },
+  });
+  y = doc.lastAutoTable.finalY + 4;
+
+  // Steps table
+  const stepHead = [['#','Process','Water (L)','Ratio','Chemicals','Temp °C','Time','Notes']];
+  const stepBody = [];
+  for (let i = 0; i < 18; i++) {
+    const s = (r.steps||[])[i] || {};
+    let chemStr = '';
+    if (s.chemicals && s.chemicals.length) {
+      chemStr = s.chemicals.map(c => {
+        const parts = [c.name];
+        if (c.weight) parts.push(c.weight + 'g');
+        if (c.percent) parts.push('(' + c.percent + '%)');
+        return parts.filter(Boolean).join(' ');
+      }).filter(Boolean).join('\n');
+    } else if (s.chemical || s.qty) {
+      // legacy
+      chemStr = [s.chemical, s.qty].filter(Boolean).join(' ');
+    }
+    stepBody.push([i+1, s.process||'', s.water||'', s.ratio||'', chemStr, s.temp||'', s.time||'', s.notes||'']);
+  }
+  doc.autoTable({
+    startY: y,
+    head: stepHead,
+    body: stepBody,
+    theme: 'grid',
+    headStyles: { fillColor: [40,80,130], textColor: 255, fontSize: 8, halign:'center' },
+    bodyStyles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 6 },
+    columnStyles: { 0:{halign:'center', cellWidth:8, fontStyle:'bold', fillColor:[245,247,252]} },
+    margin: { left: M, right: M },
+  });
+  y = doc.lastAutoTable.finalY + 4;
+
+  // Comments
+  if (r.comments) {
+    doc.setFontSize(9); doc.setFont(undefined,'bold');
+    doc.text('Comments:', M, y); y += 4;
+    doc.setFont(undefined,'normal');
+    const lines = doc.splitTextToSize(r.comments, W - 2*M);
+    doc.text(lines, M, y); y += lines.length * 4 + 2;
+  }
+
+  // Footer
+  doc.setFontSize(7); doc.setTextColor(120,120,120);
+  doc.text(`Created ${new Date(r.createdAt || Date.now()).toLocaleString('en-GB')} by ${r.createdBy || 'unknown'}`, M, 290);
+
+  // Build filename: COMPANY, PROJECT CODE, RECIPE CODE
+  const cust = (r.customers||[])[0] || {};
+  const parts = [cust.customer, cust.project, r.code + (r.variant||'')].filter(Boolean);
+  const filename = parts.join(', ') + '.pdf';
+  doc.save(filename);
+  toast('PDF exported', 'ok');
+}
+// ── END RECIPES ───────────────────────────────────────────────────────────
 
 // Start on home page — all sub-app navs hidden
 document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
